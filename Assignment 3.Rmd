@@ -74,10 +74,6 @@ per kwH of electricity?
 mec_el <- 0.85/tonne_to_lbs*scc_co2_cost
 mec_el_cents <- round(mec_el*100,2)
 
-#create a function for this
-mec_func <- function(price){
-  price/mec_el
-}
 ```
 
 Use dimensional analysis for solution:
@@ -93,8 +89,13 @@ agg_func <- function(price){
 (low_fit$coefficients[2]+ high_fit$coefficients[2])*price + (low_fit$coefficients[1] + high_fit$coefficients[1])
 }
 
+# crate inverse aggregated function in order to plug in quantities
+agg_func_inv <- function(price){
+(low_fit_inv$coefficients[2]+ high_fit_inv$coefficients[2])*price + (low_fit_inv$coefficients[1] + high_fit_inv$coefficients[1])
+}
+
 #plug in 10 cent equilibrium price to determine quantity supplied at this price
-eq_quantity <- agg_func(el_price_cents)
+eq_quantity <- round(agg_func(el_price_cents),0)
 
 # use this point and given zero intercept to determine slope first having quantity be function of cost
 supply_slope <- eq_quantity/el_price_cents
@@ -104,7 +105,9 @@ supply_func <- function(price) {
   quantity = supply_slope*price
 }
 
-
+supply_func_inv <- function(quantity){
+  price = quantity/supply_slope
+}
 ```
 
 ```{r}
@@ -116,16 +119,12 @@ data_check <- data %>%
          cost_est_low = low_func_inv(q_low_kwh),
          agg_est = agg_func(price_cents),
          sum = high_est + low_est,
-         supply = supply_func(x1))
+         supply = supply_func(price_cents))
 
 ggplot(data = data_check)+
-  geom_line(aes(x = q_high_kwh, y = price_cents), color = 'black')+
-  geom_line(aes(x = high_est, y = price_cents), color = 'blue')+
-  geom_line(aes(x = q_low_kwh, y = price_cents), color = 'green')+
-  geom_line(aes(x = low_est, y = price_cents), color = 'red')+
-  geom_line(aes(x = q_low_kwh+q_high_kwh, y = price_cents), color = 'cyan')+
-  geom_line(aes(x = agg_est, y = price_cents), color = 'orange')+
-  geom_line(aes(x = supply, y = x1), color = 'orange')+
+  geom_line(aes(x = supply, y = price_cents), color = 'blue')+
+  geom_line(aes(x = agg_est, y = price_cents), color = 'cyan')+
+  geom_hline(yintercept = mec_el_cents, color = 'orange')+
   geom_point(aes(x = eq_quantity, y = el_price_cents))
 
 ```
@@ -145,21 +144,14 @@ To get our supply curve we can use our current price and the given fact of a zer
 
 Supply(price) = `r supply_slope` $\mathrm{{kwh}{cent}}$ *cost
 
-```{r}
-data <- data %>% 
-  mutate(high_est = high_func(price_cents),
-         low_est = low_func(price_cents),
-         agg_est = agg_func(price_cents),
-         supply = supply_func(price_cents),
-         mec = mec_func(price_cents))
+Consumer benefit:
+Area under aggregate supply curve between 0 and `r eq_quantity` kWh minus area under supply curve from zero to `r eq_quantity`. 
 
-ggplot(data = data_check)+
-  geom_line(aes(x = high_est, y = price_cents), color = 'blue')+
-  geom_line(aes(x = low_est, y = price_cents), color = 'red')+
-  geom_line(aes(x = agg_est, y = price_cents), color = 'green')+
-  geom_line(aes(x = supply, y = price_cents), color = 'orange')+
-  geom_line(aes(x = mec, y = price_cents), color = 'cyan')+
-  geom_point(aes(x = eq_quantity, y = el_price_cents))
+```{r}
+#calculate excesses
+cons_exc <- integrate(agg_func_inv, 0, eq_quantity)$value  - integrate(supply_func_inv, 0, eq_quantity)$value
+
+prod_exc <- integrate(supply_func_inv, 0, eq_quantity)$value
 
 ```
 
