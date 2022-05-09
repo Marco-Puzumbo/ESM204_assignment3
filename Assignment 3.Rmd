@@ -109,7 +109,6 @@ supply_func_inv <- function(quantity){
   price = quantity/supply_slope
 }
 ```
-
 ```{r}
 #sanity check
 data_check <- data %>% 
@@ -129,7 +128,7 @@ ggplot(data = data_check)+
 
 ```
 
-3. Aggregate monthly demand curve is horizontal sum of high and low income monthly demand curves. Start by creating linear fit of quantity demanded as function of price for both income groups. Given these are in the same format coefficients can be directly summed.
+Aggregate monthly demand curve is horizontal sum of high and low income monthly demand curves. Start by creating linear fit of quantity demanded as function of price for both income groups. Given these are in the same format coefficients can be directly summed.
 
 High income monthly demand function:\
 high_income_demand(price) = `r high_fit$coefficients[2]`$\mathrm{\frac{mWh}{\$}}$ * price + `r high_fit$coefficients[1]` kWh
@@ -153,8 +152,23 @@ cons_exc <- integrate(agg_func_inv, 0, eq_quantity)$value  - integrate(supply_fu
 
 prod_exc <- integrate(supply_func_inv, 0, eq_quantity)$value
 
+env_cost <- eq_quantity*mec_el_cents
+
 ```
 
+```{r}
+#plot
+colors <-  c("aggregated demand" = "blue", "low income demand" = "red", 
+             "high income demand" = "green", "supply" = "purple")
+ggplot(data = data_check)+
+  stat_function(fun = agg_func_inv, aes(color = "aggregated demand"))+
+  stat_function(fun = low_func_inv, aes(color = "low income demand"))+
+  stat_function(fun = high_func_inv, aes(color = "high income demand"))+
+  stat_function(fun = supply_func_inv, aes(color = "supply"))+
+  xlim(0, 700000)+ ylim(0, 60)
+scale_color_manual(values = colors)
+
+```
 
 
 
