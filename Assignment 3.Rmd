@@ -147,18 +147,18 @@ Supply(price) = `r supply_slope` $\mathrm{{kwh}{cent}}$ *cost
 
 ```{r}
 data <- data %>% 
-  mutate(agg_est = agg_func(price_cents),
-         supply = supply_func(x1),
-         mec_func = mec_el(price))
+  mutate(high_est = high_func(price_cents),
+         low_est = low_func(price_cents),
+         agg_est = agg_func(price_cents),
+         supply = supply_func(price_cents),
+         mec = mec_func(price_cents))
 
 ggplot(data = data_check)+
-  geom_line(aes(x = q_high_kwh, y = price_cents), color = 'black')+
   geom_line(aes(x = high_est, y = price_cents), color = 'blue')+
-  geom_line(aes(x = q_low_kwh, y = price_cents), color = 'green')+
   geom_line(aes(x = low_est, y = price_cents), color = 'red')+
-  geom_line(aes(x = q_low_kwh+q_high_kwh, y = price_cents), color = 'cyan')+
-  geom_line(aes(x = agg_est, y = price_cents), color = 'orange')+
-  geom_line(aes(x = supply, y = x1), color = 'orange')+
+  geom_line(aes(x = agg_est, y = price_cents), color = 'green')+
+  geom_line(aes(x = supply, y = price_cents), color = 'orange')+
+  geom_line(aes(x = mec, y = price_cents), color = 'cyan')+
   geom_point(aes(x = eq_quantity, y = el_price_cents))
 
 ```
