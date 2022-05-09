@@ -1,0 +1,173 @@
+---
+title: "Assignment 3"
+author: "Marco Palombo"
+date: "4/19/2022"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include = FALSE, message = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(janitor)
+library(here)
+library(lubridate)
+library(kableExtra)
+library(effsize)
+library(broom)
+```
+
+```{r}
+# import 
+data <-  (data <- read_csv(here("HW3_data.csv"))) %>% 
+ clean_names()
+
+# given
+scc_co2_cost <- 51 #$/metric ton
+el_price_cents <- 10 #cents/kWh
+
+# conversion factors
+tonne_to_lbs = 2204.62 # pounds/metric ton
+```
+
+```{r}
+# linear fits to the high and low income data
+high_fit <- lm(q_high_kwh ~ price_cents, data = data)
+low_fit <- lm(q_low_kwh ~ price_cents, data = data)
+
+# now create functions based on parameters from these fits
+high_func <- function(price){  
+  demand = high_fit$coefficients[2]*price + high_fit$coefficients[1]
+}
+
+low_func <- function(price){  
+  demand = low_fit$coefficients[2]*price + low_fit$coefficients[1]
+}
+
+# suspect there will be a need for inverse function for willingness to pay for a given quantity
+high_fit_inv <- lm( price_cents ~ q_high_kwh, data = data)
+low_fit_inv <- lm(price_cents ~ q_low_kwh, data = data)
+
+high_func_inv <- function(quantity){  
+  price = high_fit_inv$coefficients[2]*quantity + high_fit_inv$coefficients[1]
+}
+
+low_func_inv <- function(quantity){  
+  price = low_fit_inv$coefficients[2]*quantity + low_fit_inv$coefficients[1]
+}
+
+```
+
+
+
+```{r}
+
+```
+1. One kWh of electricity emits 0.85 pounds of CO2. Assuming that the interim SCC correctly
+reflects the total social cost of one metric ton of CO2, what is the marginal externality cost
+per kwH of electricity?
+
+```{r}
+# part one calculation
+mec_el <- 0.85/tonne_to_lbs*scc_co2_cost
+mec_el_cents <- round(mec_el*100,2)
+
+#create a function for this
+mec_func <- function(price){
+  price/mec_el
+}
+```
+
+Use dimensional analysis for solution:
+$\mathrm{\frac{0.85~lbs}{kWh}*\frac{tonne~CO_2}{2204.62~lbs~CO_2}*\frac{\$51}{1~tonne~CO_2}*\frac{100~cents}{1~\$}}$ = `r round(mec_el_cents,2)`$\mathrm{\frac{cents}{kWh}}$
+
+2. What is the aggregate monthly demand curve for electricity? What is the supply curve for
+electricity? What is the “benefit” to consumers under the status quo? What is the “benefit”
+to producers under the status quo? What is the environmental cost under the status quo?
+
+```{r}
+# aggreagate function price as input simply sum of coefficients 
+agg_func <- function(price){
+(low_fit$coefficients[2]+ high_fit$coefficients[2])*price + (low_fit$coefficients[1] + high_fit$coefficients[1])
+}
+
+#plug in 10 cent equilibrium price to determine quantity supplied at this price
+eq_quantity <- agg_func(el_price_cents)
+
+# use this point and given zero intercept to determine slope first having quantity be function of cost
+supply_slope <- eq_quantity/el_price_cents
+# now create a function of quantity as function of price
+
+supply_func <- function(price) {
+  quantity = supply_slope*price
+}
+
+
+```
+
+```{r}
+#sanity check
+data_check <- data %>% 
+  mutate(high_est = high_func(price_cents),
+         low_est = low_func(price_cents),
+         cost_est_high = high_func_inv(q_high_kwh),
+         cost_est_low = low_func_inv(q_low_kwh),
+         agg_est = agg_func(price_cents),
+         sum = high_est + low_est,
+         supply = supply_func(x1))
+
+ggplot(data = data_check)+
+  geom_line(aes(x = q_high_kwh, y = price_cents), color = 'black')+
+  geom_line(aes(x = high_est, y = price_cents), color = 'blue')+
+  geom_line(aes(x = q_low_kwh, y = price_cents), color = 'green')+
+  geom_line(aes(x = low_est, y = price_cents), color = 'red')+
+  geom_line(aes(x = q_low_kwh+q_high_kwh, y = price_cents), color = 'cyan')+
+  geom_line(aes(x = agg_est, y = price_cents), color = 'orange')+
+  geom_line(aes(x = supply, y = x1), color = 'orange')+
+  geom_point(aes(x = eq_quantity, y = el_price_cents))
+
+```
+
+3. Aggregate monthly demand curve is horizontal sum of high and low income monthly demand curves. Start by creating linear fit of quantity demanded as function of price for both income groups. Given these are in the same format coefficients can be directly summed.
+
+High income monthly demand function:\
+high_income_demand(price) = `r high_fit$coefficients[2]`$\mathrm{\frac{mWh}{\$}}$ * price + `r high_fit$coefficients[1]` kWh
+
+Low income monthly demand function:\
+low_income_demand(price) = `r low_fit$coefficients[2]`$\mathrm{\frac{mWh}{\$}}$ * price + `r low_fit$coefficients[1]` kWh
+
+Aggregate monthly demand function:\
+aggregate_demand(price)= `r high_fit$coefficients[2]+low_fit$coefficients[2]`$\mathrm{\frac{mWh}{\$}}$ * price + `r high_fit$coefficients[1]+low_fit$coefficients[1]` kWh
+
+To get our supply curve we can use our current price and the given fact of a zero intercept, along with assumption of linearity, to generate a line. Plug in given $0.10 equilibrium price into aggregate demand curve to determine quantity supplied at this price. Next generate equation for a line that intersects this point and the origin. In this case I used cost as the independent variable, if I was to use quantity instead the linear factor (slope) would simply inverted. 
+
+Supply(price) = `r supply_slope` $\mathrm{{kwh}{cent}}$ *cost
+
+```{r}
+data <- data %>% 
+  mutate(agg_est = agg_func(price_cents),
+         supply = supply_func(x1),
+         mec_func = mec_el(price))
+
+ggplot(data = data_check)+
+  geom_line(aes(x = q_high_kwh, y = price_cents), color = 'black')+
+  geom_line(aes(x = high_est, y = price_cents), color = 'blue')+
+  geom_line(aes(x = q_low_kwh, y = price_cents), color = 'green')+
+  geom_line(aes(x = low_est, y = price_cents), color = 'red')+
+  geom_line(aes(x = q_low_kwh+q_high_kwh, y = price_cents), color = 'cyan')+
+  geom_line(aes(x = agg_est, y = price_cents), color = 'orange')+
+  geom_line(aes(x = supply, y = x1), color = 'orange')+
+  geom_point(aes(x = eq_quantity, y = el_price_cents))
+
+```
+
+
+
+
+
+
+
+
+
