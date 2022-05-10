@@ -40,27 +40,23 @@ low_fit <- lm(q_low_kwh ~ price_cents, data = data)
 
 # now create functions based on parameters from these fits
 high_func <- function(price){  
-  demand = high_fit$coefficients[2]*price + high_fit$coefficients[1]
+  quantity = high_fit$coefficients[2]*price + high_fit$coefficients[1]
 }
 
 low_func <- function(price){  
-  demand = low_fit$coefficients[2]*price + low_fit$coefficients[1]
+  quantity = low_fit$coefficients[2]*price + low_fit$coefficients[1]
 }
 
-# suspect there will be a need for inverse function for willingness to pay for a given quantity
-high_fit_inv <- lm( price_cents ~ q_high_kwh, data = data)
-low_fit_inv <- lm(price_cents ~ q_low_kwh, data = data)
-
+# inverse functions
 high_func_inv <- function(quantity){  
-  price = high_fit_inv$coefficients[2]*quantity + high_fit_inv$coefficients[1]
+  price = (quantity - high_fit$coefficients[1])/high_fit$coefficients[2]
 }
 
 low_func_inv <- function(quantity){  
-  price = low_fit_inv$coefficients[2]*quantity + low_fit_inv$coefficients[1]
+  price = (quantity - low_fit$coefficients[1])/low_fit$coefficients[2]
 }
 
 ```
-
 
 1. One kWh of electricity emits 0.85 pounds of CO2. Assuming that the interim SCC correctly
 reflects the total social cost of one metric ton of CO2, what is the marginal externality cost
@@ -86,9 +82,8 @@ agg_func <- function(price){
 quantity = (low_fit$coefficients[2]+ high_fit$coefficients[2])*price + (low_fit$coefficients[1] + high_fit$coefficients[1])
 }
 
-# create inverse aggregated function in order to plug in quantities
 agg_func_inv <- function(quantity){
-quantity/(low_fit$coefficients[2]+ high_fit$coefficients[2]) - agg_func(0)
+price = (quantity - (low_fit$coefficients[1] + high_fit$coefficients[1])) /(low_fit$coefficients[2]+ high_fit$coefficients[2])
 }
 
 #plug in 10 cent equilibrium price to determine quantity supplied at this price
@@ -107,24 +102,7 @@ supply_func_inv <- function(quantity){
 }
 ```
 
-```{r}
-#sanity check
-data_check <- data %>% 
-  mutate(high_est = high_func(price_cents),
-         low_est = low_func(price_cents),
-         cost_est_high = high_func_inv(q_high_kwh),
-         cost_est_low = low_func_inv(q_low_kwh),
-         agg_est = agg_func(price_cents),
-         sum = high_est + low_est,
-         supply = supply_func(price_cents))
 
-ggplot(data = data_check)+
-  geom_line(aes(x = supply, y = price_cents), color = 'blue')+
-  geom_line(aes(x = agg_est, y = price_cents), color = 'cyan')+
-  geom_hline(yintercept = mec_el_cents, color = 'orange')+
-  geom_point(aes(x = eq_quantity, y = el_price_cents))
-
-```
 
 ```{r}
 #calculate excesses
@@ -165,9 +143,48 @@ Area under MEC curve between 0 and `r eq_quantity`. Given MEC curve is a constan
 `r env_cost` cents
 
 3.  How is the current consumer benefit divided between “high” and “low” income consumers?
-Consumer benefit defined above is equal to the sum of the consumer benefit of high income consumers and the consumer benefit of low income consumers.
 
+Consumer benefit is equal to the sum of the consumer benefit of high income consumers and the consumer benefit of low income consumers. In order to find each of these the first step is to find the intercept with the supply curve for both high and low income consumers. 
 
+```{r}
+# find intercept in quantity space
+low_int_quantity <- round(uniroot(function(quantity) supply_func_inv(quantity)-low_func(quantity), c(0,400000), tol = .01)$root,0)
+
+high_int_quantity <- round(uniroot(function(quantity) supply_func_inv(quantity)-high_func_inv(quantity), c(0,600000), tol = .01)$root,0)
+
+high_exc <- integrate(high_func_inv, 0, high_int_quantity)$value  - integrate(supply_func_inv, 0, eq_quantity)$value
+
+low_exc <- integrate(low_func_inv, 0, low_int_quantity)$value  - integrate(supply_func_inv, 0, eq_quantity)$value
+
+test = cons_exc-high_exc-low_exc
+```
+
+```{r}
+#sanity check
+data_check <- data %>% 
+  mutate(high_est = high_func(price_cents),
+         low_est = low_func(price_cents),
+         cost_est_high = high_func_inv(q_high_kwh),
+         cost_est_low = low_func_inv(q_low_kwh),
+         agg_est = agg_func(price_cents),
+         sum = high_est + low_est,
+         supply = supply_func(price_cents))
+
+ggplot(data = data_check)+
+  geom_line(aes(x = high_est, y = price_cents), color = "black")+
+  geom_line(aes(x = q_high_kwh, y = price_cents), color = "black")+
+  geom_line(aes(x = low_est, y = price_cents), color = "red")+
+  geom_line(aes(x = q_low_kwh, y = price_cents), color = "red")+
+  geom_line(aes(x = supply, y = price_cents), color = "blue")+
+  geom_line(aes(x = agg_est, y = price_cents), color = "cyan")+
+  geom_hline(yintercept = mec_el_cents, color = "orange")+
+  geom_point(aes(x = high_int_quantity, y = low_func_inv(high_int_quantity)))+
+  geom_point(aes(x = low_int_quantity, y = high_func_inv(low_int_quantity)))
+
+```
+Consumer "benefit"(excess):
+Area under aggregate demand curve between 0 and `r eq_quantity` kWh minus area under supply curve from zero to `r eq_quantity`.
+`r cons_exc` cents
 
 
 
