@@ -195,11 +195,13 @@ demand_tax <- function(p, model){
   return(q)
 } 
 
+#new aggregated demand function
 demand_agg_tax <- function(p){
   q <- demand_tax(p, demand_low) + demand_tax(p, demand_high)
   return(q)
 }
-#use the uniroot to find intercept of supply and taxed aggregated demand functions
+
+#use uniroot to find intercept of supply and taxed aggregated demand functions
 p_new <- round(uniroot(function(p) demand_agg_tax(p) - supply(p), interval = c(0,20))$root,2)
  #determine demanded quantity at this price
 q_new <- demand_agg_tax(p_new)
@@ -207,57 +209,123 @@ q_new <- demand_agg_tax(p_new)
 #change in demand
 demand_change <- demand_agg(10) - demand_agg_tax(p_new)
 
-#cost change
+#change in cost
 price_change <- 10 - p_new
 
 # high income welfare
 ##NOTE: here is where my assumptions will start. I will not apply any of the environmental externality to high income consumers.
 demand_high_tax <- demand_tax(p_new, demand_high)
 welfare_high_tax <- (0.5 * (.3161 - 0.0197 - 0.0932) * demand_high_tax) - (demand_high_tax * 0.0197)
-high_welfare_change <- cs_high-welfare_high_tax
 
-# "Welfare" for high income initially is same as CS since there is no externality/tax for them. 
+# change in high income welfare
 welfare_high_change <- cs_high - welfare_high_tax
 
-# low income welfare
+# low income welfare, apply assumption of environmental cost falling entirely on this group for pre tax case 
 welfare_low_baseline <- cs_low - env_cost_baseline
-demand_low_tax <- demand(p_new, demand_low)
-#Below is the total env cost at the new level of consumption
+
+#calculate environmental cost at this tax value
 env_cost_tax <- interim_price_kwh * q_new
+
+# solve for post tax demand
+demand_low_tax <- demand(p_new, demand_low)
+# use value to solve for welfare. AGAIN This is where my assumption is applied. I'm taking the entire environmental cost and subtracting it from low income consumers
 welfare_low_tax <- (0.5 * (.2337 - 0.0197 - 0.0932) * demand_low_tax) - (demand_low_tax * 0.0197) - env_cost_tax
+
+#calculate change in welfare for low income people
 welfare_low_change <- welfare_low_baseline - welfare_low_tax
-# Dropped by $2,204
-#E. PS decreases 
+
+#E. Producer surplus
 ps_tax <- 0.5*q_new*0.0932
+#change
 ps_change <- ps_baseline - ps_tax
-#$3526 decrease 
-#F. ENV damage decreases 
+
+#F. ENV damage change
 damage_change <- env_cost_baseline - env_cost_tax
-#Damage goes down by $717.8 (small change)
+
 #G. Tax revenue 
 tax_revenue <- interim_price_kwh*q_new
-# $9,835 tax revenue (this is exactly the same as the env cost)
 ```
 
 
-**A:** The amount of electricity produced/consumed *decreases* by `r round(demand_change, 0)`kWh. The new total consumption is `r round(q_new, 0)`
+A: Electricity consumed decreases by `r round(demand_change, 0)`kWh. Total consumption is `r round(q_new, 0)` with this tax.
 
-**B:** The price of electricity *decreases* by $`r round(price_change, 2)`. 
-The new price is $`r p_new`/kWh. 
+B: The price of electricity decreases by $`r round(price_change, 2)`. The new price is \$`r p_new`/kWh with this tax.
 
-**C:** The welfare of high-income *decreases* by $`r round(welfare_high_change, 0)`. This includes the cost of taxes paid by these consumers.
+C: The welfare of high-income decreases by $`r round(welfare_high_change, 0)`. This includes the cost of taxes paid by these consumers.
 
-**D:** The welfare of low-income consumers *decreases* by $`r round(welfare_low_change, 0)`. *Note: welfare was already negative for low-income consumers if we assume they bear the full environmental cost associated with electricity production.*
+D: The welfare of low-income consumers decreases by $`r round(welfare_low_change, 0)`. 
 
-**E:** The producer surplus *decreases* by $ `r round(ps_change, 0)`.
+Note: welfare was already negative for low-income consumers if we assume they bear the full environmental cost associated with electricity production.*
 
-**F:** The environmental damage *decreases* by $`r round(damage_change, 0)`.
+E: The producer surplus decreases by $ `r round(ps_change, 0)`.
 
-**G:** The tax revenue generated is $`r round(tax_revenue, 0)`. *Note: this is equal to the total environmental cost.*
+F: The environmental damage decreases by $`r round(damage_change, 0)`.
 
-### **5. Redistribution**
+G: Tax revenue generated is $`r round(tax_revenue, 0)`. This is equal to the total environmental cost.
+
+### 5. Redistribution
 
 ```{r}
+#wow_this_question_is_repetitive_dear_god_there_must_be_a_better_way <- function(SCC){
+  #calculate price of kwh considering given SCC, this will end up being the tax
+SCC <- 51  
+tax <- SCC/2204.6*.85
+  
+  #define demand functions
+  # shift demand curves down by price of kwh
+demand_tax <- function(p, model){
+  q <- (p - (model$coefficients[[1]]-tax*100))/model$coefficients[[2]]
+  q <- ifelse(q<0,0,q)
+}
+
+#aggregate demand function
+demand_agg_tax <- function(p){
+  q <- demand_tax(p, demand_low) + demand_tax(p, demand_high)
+  return(q)
+}
+
+#use uniroot to find intercept of supply and taxed aggregated demand functions
+price <- round(uniroot(function(p) demand_agg_tax(p) - supply(p), interval = c(0,20))$root,2)
+
+#total quantity purchased
+total <- demand_agg_tax(price)
+
+#damage and tax revenue are the same so just calculate it once
+damage_tax_revenue <- total*price/100
+
+#now determine proportion consumed by the two income levels
+#high income
+high_consumption_frac <- demand(price,demand_high)/total
+#low income
+low_consumption_frac <- demand(price,demand_low)/total
+
+#using this we can now calculate welfare
+#first get redistribution
+high_redist <- damage_tax_revenue*high_consumption_frac
+low_redist <- damage_tax_revenue*low_consumption_frac
+
+#high
+high_welfare <- 0.5*(demand(0,demand_high)-demand(price,demand_high)) + high_redist
+
+#low
+low_welfare_area <- 0.5*(demand(0,demand_low)-demand(price,demand_low))
+
+low_welfar <- low_welfare_area - damage_tax_revenue + low_redist
+
+#producer surplus
+producer_surp <- 0.5*price*demand_agg(price)
+
+#populate list of things to output
+outputs <- list("high_welfare" = high_welfare, "low_welfar" = low_welfare, "producer_surplus" = producer_surp)
+
+#return(outputs)
+
+#}
+```
+
+```{r}
+test <- wow_this_question_is_repetitive_dear_god_there_must_be_a_better_way(1.97)
+
 # Calculating different prices 
 # If price/ton is $75 --- 75/(2204.6/0.85) --- $0.0289/kWh
 # If price/ton is $100 --- 100/(2204.6/0.85)--- $0.0386.kWh
