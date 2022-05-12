@@ -17,54 +17,56 @@ library(thematic)
 library(scales)
 library(equatiomatic)
 ```
+## Overview
 
 ```{r}
 # Read in the main data set
-data <- read_csv(here("HW3_data.csv")) %>% 
-  clean_names()
+carbon <- read_csv(here("HW3_data.csv")) %>% 
+  clean_names() %>% 
+  select(-x1)
 ```
 
-### 1. 
+### 1
+
+One kWh of electricity emits 0.85 pounds of CO2. Assuming that the interim SCC correctly reflects the total social cost of one metric ton of CO2, what is the marginal externality cost per kwH of electricity?
 
 Assuming that one kWh of electricity emits 0.85 pounds of CO2 and that the interim SCC of $51/ton is accurate, this section calculates the MEC per kWh.
 
 ```{r}
 # Create a longer dataset where income is a variable, not a column 
-data_long <- data %>% 
+carbon_long <- carbon %>% 
   pivot_longer(cols = c(q_low_kwh, q_high_kwh),
                names_to = 'income_level',
                values_to = 'kwh') %>% 
   mutate(income_level = case_when(income_level == 'q_low_kwh' ~ 'low',
                    income_level == 'q_high_kwh' ~ 'high'))
-# Run a simple calculation to get the MEC 
-interim_price_ton <- 51
+
+# solve for MEC
+price_ton <- 51
 #2205 lbs in a metric ton. Divide by 0.85 to get kwh produced per ton
 kwh_ton <- 2204.6/0.85
 # Multiply by Biden price to get MEC/kWh (Basically, $51 is the price for 2594 kwh)
-interim_price_kwh <- 51/kwh_ton
+interim_price_kwh <- price_ton/kwh_ton
 ```
 
-Use dimensional analysis for solution:
-$\mathrm{\frac{1~kWh}{.85~lb~CO_2}*\frac{2204.6~lb~CO_2}{1~tonne~CO_2}*\frac{1~tonne}{\$51}}$ = $`r round(interim_price_kwh, 4)`.
+Marginal externality cost per kWh of electricity is $`r round(interim_price_kwh, 4)`.
 
 ### 2
-What is the aggregate monthly demand curve for electricity? What is the supply curve for
-electricity? What is the “benefit” to consumers under the status quo? What is the “benefit”
-to producers under the status quo? What is the environmental cost under the status quo?
-Low income demand curve:
+What is the aggregate monthly demand curve for electricity? What is the supply curve for  electricity? What is the “benefit” to consumers under the status quo? What is the “benefit” to producers under the status quo? What is the environmental cost under the status quo?
 
+Low income demand curve:
 ```{r}
-# Calculate aggregate demand curve for electricity
-# First get lm estimates from data for both low and high
+# linear fit low income data
 demand_low <- lm(price_cents ~ kwh, income_level=='low', 
-                 data = data_long) 
+                 data = carbon_long) 
 extract_eq(model = demand_low, use_coefs = TRUE, coef_digits = 5)
 ```
 
 High income demand curve:
 ```{r}
+# linear fit to high income data
 demand_high <- lm(price_cents ~ kwh, income_level=='high',
-                  data = data_long) 
+                  data = carbon_long) 
 extract_eq(model = demand_high, use_coefs = TRUE, coef_digits = 5)
 
 # Generalized demand model from sample code 
@@ -73,8 +75,7 @@ demand <- function(p, model){
   q <- ifelse(q<0,0,q)
   return(q)
 }
-
-# Generalized aggregate demand, pulled from code sample
+# Generalized aggregate demand from code sample
 demand_agg <- function(p){
   q <- demand(p, demand_low) + demand(p, demand_high)
   return(q)
@@ -82,268 +83,222 @@ demand_agg <- function(p){
 
 ```
 
-Perform a horizontal sum to get an aggregate demand curve. This does not follow a perfect line due to the kink at the top. 
+Perform horizontal sum of low and high income demand curves to get aggregate demand curve. This does not follow a perfect line due to the kink at the top. 
 
 ```{r}
-# take care of kink, pulled from code sample
+# Make a vector and extract the lm 
 price = seq(0, 30, length.out = 100)
 Qagg <- map(price, demand_agg) %>% 
   unlist()
 agg_df<- tibble(Qagg = Qagg, price = price)
-
 ```
 
-Use given price of 0.10 cents/kWh and 0 intercept to create function for supply. Plug in 0.10 cents/kWh to get quantity. Use this point and the zero intercept to create function for the line passing through these points.
+To calculate the supply curve plug in given 10 cent equilibrium price and use the resulting quantity combined with given zero intercept to create function for line intersecting these two points.
 
 ```{r}
-quantity <- demand_agg(10)
+kwh_agg <- demand_agg(10)
 #536,719.5 kWh consumed @ $0.10
-supply_slope <- 10/quantity
+supply_slope <- 10/kwh_agg
 supply <- function(p){
   q <- p/supply_slope
   return(q)
 }
 ```
-Supply curve:
-P(cents) =`r supply_slope`(cents/kWh*Q
 
+P = 0.0000186Q
+
+#### Market for Electricity
 ```{r}
-# CS needs Y intercept --> at 0 kWh, price would be $0.305
-# Note the conversion back to dollars 
-cs_baseline <- 0.5*quantity*(0.305 - 0.10)
-# $55,013.74
-# PS easy, just go up to 10 and out to the kwh 
-ps_baseline <- 0.5*quantity*0.10
-# $26,835.97
-# cost is rectangle 
-env_cost_baseline <- interim_price_kwh*quantity
-# $10,553.75
-```
-
-- Consumer Benefit is area under aggregated demand curve above equilibrium price of 10 cents:
-$`r round(cs_baseline, 0)`
-- Producer Benefit is area under price of 10 cents and above supply curve:
-$`r round(ps_baseline, 0)`
-- Environmental Cost is product of equilibrium price and total energy sold at this price:
-$`r round(env_cost_baseline, 0)`
-
-#### Figure of curves
-```{r}
-# create figure of curves
 ggplot(agg_df, aes(Qagg, price)) +
-  geom_line(color = "blue") +
+  geom_line(color = "red") +
   annotate("text", x = 400000, y = 17, 
            label = "Aggregate Demand", angle = -30) +
-  geom_abline(color = "red",
+  geom_abline(color = "blue",
               intercept = demand_high$coefficients[1],
               slope= demand_high$coefficients[2]) +
   annotate("text", x = 300000, y = 15, 
-           label = "High Income Demand", angle = -40) +
+           label = "High-Income Demand", angle = -38) +
   geom_abline(color = "green",
               intercept = demand_low$coefficients[1],
               slope= demand_low$coefficients[2]) +
   annotate("text", x = 150000, y = 10, 
-           label = "Low Income Demand", angle = -58) +
+           label = "Low-Income Demand", angle = -55) +
   geom_abline(color = "orange",
               intercept = 0,
               slope= supply_slope) +
   annotate("text", x = 300000, y = 7, 
            label = "Supply", angle = 17) +
-  labs(x = "Energy (kWh)",
+  labs(x = "Electricity Consumed (kWh)",
        y = "Price (cents/kWh)")
   
 ```
 
 
-### 3
- How is the current consumer benefit divided between “high” and “low” income consumers?
- 
- Determine quantity each group will purchase at this price, then calculate areas. 
+Now that we have curves we can calculate excesses, which is caled benefit in this excercise for reasons which are not clear to me. 
 
 ```{r}
-# low income demand
-#demand(10, demand_low)
-# Low income gets 121,344 
-#0 intercept is 23.37
-cs_low <- 0.5*(.2337 - .10)*demand(10, demand_low)
-# Note: this is negative (-$2441) if we apply full env. cost 
-
-#0 intercept is 31.61
-cs_high <- 0.5*(.3161-.10)*demand(10, demand_high)
-# $44,881.3 CS for high income assuming no EC 
+#consumers
+cs_baseline <- 0.5*kwh_agg*(0.305 - 0.10)
+#producers
+ps_baseline <- 0.5*kwh_agg*0.10
+# env cost
+env_cost_baseline <- interim_price_kwh*kwh_agg
+# $10,553.75
 ```
 
-High income consumers have much much higher benefit than low income consumers. 
-- Low-income: $`r round(cs_low, 0)`
-- High-income: $`r round(cs_high, 0)`
+- Consumer Benefit: Area under aggregate demand curve and above equilibrium price between zero and quantity demanded at equilibrium price
+$`r round(cs_baseline, 0)`
+- Producer Benefit: Area under equilibrium price and above supply curve between zero and quantity demanded at equilibrium price
+$`r round(ps_baseline, 0)`
+- Environmental Cost: MEC multiplied by quantity demandedat equilibrium price
+$`r round(env_cost_baseline, 0)`
 
-### 4
 
-Derive the optimal electricity tax (in cents per kWh) using the interim SCC. Noting that recent
-research has shown the poor face a disproportionate share of the impacts from climate change,
-assume that the climate externality is borne entirely by the “low” income group.
-
-I will apply the tax to the demand functions. I will subtract the entirety of the externality from low income consumers in their overall welfare calculation.
+### 3
+ 
+How is the current consumer benefit divided between “high” and “low” income consumers?
+ 
+Use the current price to calculate the amount each group will consume at this level. Then repeat consumer benefit calculation for both groups considering their respective purchased quantities and demand curves.
 
 ```{r}
-# Apply tax to both consumers 
+# low income
+cs_low <- 0.5*(.2337 - .10)*demand(10, demand_low)
+# high income
+cs_high <- 0.5*(.3161-.10)*demand(10, demand_high)
+```
+
+- Low-income CS: 
+$`r round(cs_low, 0)`
+- High-income CS: 
+$`r round(cs_high, 0)`
+
+### 4
+Derive the optimal electricity tax (in cents per kWh) using the interim SCC. Noting that recent
+research has shown the poor face a disproportionate share of the impacts from climate change,
+assume that the climate externality is borne entirely by the “low” income group. What would
+be the effects of this tax on:
+(a) The amount of electricity produced and consumed
+(b) The price of electricity
+(c) Overall welfare of “high” income consumers
+(d) Overall welfare of “low” income consumers
+
+The "derivation" of optimal tax is simple. It will be equivalent to MEC calculated above.
+
+Pretty impressive derivation huh?
+
+It appears we are being asked to assume the entire environmental impact will be subtracvted from low income welfare, though I could be wrong, so that is what will be done.
+
+```{r}
+#define tax
 tax_cents <- 1.97
-# shift demand curves down by 1.97 cents
+# rewrite function including tax
 demand_tax <- function(p, model){
   q <- (p - (model$coefficients[[1]]-1.97))/model$coefficients[[2]]
   q <- ifelse(q<0,0,q)
   return(q)
 } 
-
-#new aggregated demand function
 demand_agg_tax <- function(p){
   q <- demand_tax(p, demand_low) + demand_tax(p, demand_high)
   return(q)
 }
 
-#use uniroot to find intercept of supply and taxed aggregated demand functions
-p_new <- round(uniroot(function(p) demand_agg_tax(p) - supply(p), interval = c(0,20))$root,2)
- #determine demanded quantity at this price
+# new demand curve intersects supply curve at 9.32 cents this will be out new price
+p_new <- 9.32
+# new quantity
 q_new <- demand_agg_tax(p_new)
+```
 
-#change in demand
-demand_change <- demand_agg(10) - demand_agg_tax(p_new)
+plug in the new price and quantity to get updated values for excesses.
 
-#change in cost
+```{r}
+#price and demand changes
+demand_change <- kwh_agg - q_new
 price_change <- 10 - p_new
 
-# high income welfare
-##NOTE: here is where my assumptions will start. I will not apply any of the environmental externality to high income consumers.
+# new demand high income consumers
 demand_high_tax <- demand_tax(p_new, demand_high)
-welfare_high_tax <- (0.5 * (.3161 - 0.0197 - 0.0932) * demand_high_tax) - (demand_high_tax * 0.0197)
-
-# change in high income welfare
+#new consumer surplus
+cs_high_tax <- (0.5 * (demand_high$coefficients[1]-tax_cents-p_new) * demand_high_tax)/100
+#high income consumers    
+welfare_high_tax <- cs_high_tax - (demand_high_tax * 0.0197)
+#changes
 welfare_high_change <- cs_high - welfare_high_tax
 
-# low income welfare, apply assumption of environmental cost falling entirely on this group for pre tax case 
+#assume that environmental damage affects low income consumers in no tax scenario
 welfare_low_baseline <- cs_low - env_cost_baseline
-
-#calculate environmental cost at this tax value
+# new low income demand
+demand_low_tax <- demand_tax(p_new, demand_low)
+#environmetal cost at new demand levels
 env_cost_tax <- interim_price_kwh * q_new
-
-# solve for post tax demand
-demand_low_tax <- demand(p_new, demand_low)
-# use value to solve for welfare. AGAIN This is where my assumption is applied. I'm taking the entire environmental cost and subtracting it from low income consumers
-welfare_low_tax <- (0.5 * (.2337 - 0.0197 - 0.0932) * demand_low_tax) - (demand_low_tax * 0.0197) - env_cost_tax
-
-#calculate change in welfare for low income people
+# suprlus
+cs_low_tax <- (0.5 * (demand_low$coefficients[1]-tax_cents-p_new) * demand_low_tax)/100
+# subtract taxes and environmental damage to get welfare
+welfare_low_tax <- cs_low_tax - (demand_low_tax * 0.0197) - env_cost_tax
 welfare_low_change <- welfare_low_baseline - welfare_low_tax
 
-#E. Producer surplus
+#producer surplus
 ps_tax <- 0.5*q_new*0.0932
-#change
 ps_change <- ps_baseline - ps_tax
 
-#F. ENV damage change
+#environmetal damages
 damage_change <- env_cost_baseline - env_cost_tax
 
-#G. Tax revenue 
+# tax revenue
 tax_revenue <- interim_price_kwh*q_new
+
 ```
 
 
-A: Electricity consumed decreases by `r round(demand_change, 0)`kWh. Total consumption is `r round(q_new, 0)` with this tax.
+A: 
+Electricity produced/consumed decreases by `r round(demand_change, 0)`kWh. New total consumption is `r round(q_new, 0)`
 
-B: The price of electricity decreases by $`r round(price_change, 2)`. The new price is \$`r p_new`/kWh with this tax.
+B: 
+The price of electricity decreases by $`r round(price_change, 2)`.
+New price is $`r p_new`/kWh. 
 
-C: The welfare of high-income decreases by $`r round(welfare_high_change, 0)`. This includes the cost of taxes paid by these consumers.
+C: 
+The welfare of high-income consumers decreases by $`r round(welfare_high_change, 0)`.
 
-D: The welfare of low-income consumers decreases by $`r round(welfare_low_change, 0)`. 
+D: 
+The welfare of low-income consumers decreases by $`r round(welfare_low_change, 0)`. 
 
-Note: welfare was already negative for low-income consumers if we assume they bear the full environmental cost associated with electricity production.*
+Note: this is becasue we applied the negative environmental externality to the original case as well. Now they are experiencing a slightly lower environmental externality but are also now taxed.
 
-E: The producer surplus decreases by $ `r round(ps_change, 0)`.
+E: 
+Producer surplus decreases by $ `r round(ps_change, 0)`.
 
-F: The environmental damage decreases by $`r round(damage_change, 0)`.
+F: 
+Environmental damage*decreases by $`r round(damage_change, 0)`.
 
-G: Tax revenue generated is $`r round(tax_revenue, 0)`. This is equal to the total environmental cost.
+G: 
+Tax revenue is $`r round(tax_revenue, 0)`.
+Note: this is equal to the total environmental cost.
 
-### 5. Redistribution
-
-```{r}
-#wow_this_question_is_repetitive_dear_god_there_must_be_a_better_way <- function(SCC){
-  #calculate price of kwh considering given SCC, this will end up being the tax
-SCC <- 51  
-tax <- SCC/2204.6*.85
-tax_cents <- tax*100
-  
-  #define demand functions
-  # shift demand curves down by price of kwh
-demand_tax <- function(p, model){
-  q <- (p - (model$coefficients[[1]]-tax_cents))/model$coefficients[[2]]
-  q <- ifelse(q<0,0,q)
-}
-
-#aggregate demand function
-demand_agg_tax <- function(p){
-  q <- demand_tax(p, demand_low) + demand_tax(p, demand_high)
-  return(q)
-}
-
-#use uniroot to find intercept of supply and taxed aggregated demand functions
-price <- round(uniroot(function(p) demand_agg_tax(p) - supply(p), interval = c(0,20))$root,2)
-
-#total quantity purchased
-total <- demand_agg_tax(price)
-
-#damage and tax revenue are the same so just calculate it once
-damage_tax_revenue <- total*price/100
-
-#now determine proportion consumed by the two income levels
-#high income
-high_consumption_frac <- demand(price,demand_high)/total
-#low income
-low_consumption_frac <- demand(price,demand_low)/total
-
-#using this we can now calculate welfare
-#first get redistribution
-high_redist <- damage_tax_revenue*high_consumption_frac
-low_redist <- damage_tax_revenue*low_consumption_frac
-
-#high
-high_welfare <- 0.5*(demand(0,demand_high)-demand(price,demand_high)) + high_redist
-
-#low
-low_welfare_area <- 0.5*(demand(0,demand_low)-demand(price,demand_low))
-
-low_welfar <- low_welfare_area - damage_tax_revenue + low_redist
-
-#producer surplus
-producer_surp <- 0.5*price*demand_agg(price)
-
-#populate list of things to output
-outputs <- list("high_welfare" = high_welfare, "low_welfar" = low_welfare, "producer_surplus" = producer_surp)
-
-#return(outputs)
-
-#}
-```
+### 5 
 
 ```{r}
-test <- wow_this_question_is_repetitive_dear_god_there_must_be_a_better_way(1.97)
+# repeat calcs for each hypothetical SCC value
+tax_75 <- 2.89
+tax_100 <- 3.86
+tax_125 <- 4.82
+tax_150 <- 5.78
 
-# Calculating different prices 
-# If price/ton is $75 --- 75/(2204.6/0.85) --- $0.0289/kWh
-# If price/ton is $100 --- 100/(2204.6/0.85)--- $0.0386.kWh
-# If price/ton is $125 --- 125/(2204.6/0.85) --- $0.0482/kWh
-# If price/ton is $150 --- 150/(2204.6/0.85) --- $0.0578/kWh
-price_c_75 <- 2.89
-price_c_100 <- 3.86
-price_c_125 <- 4.82
-price_c_150 <- 5.78
+# Put into vector 
+scc_vec <- c(tax_75, tax_100, tax_125, tax_150)
+
 # pre-tax consumption 
-low_share <- demand(10, demand_low)/quantity
-#22.61%
-high_share <- demand(10, demand_high)/quantity
-#77.39%
-# @ $51 (the original SCC):
+low_share <- demand(10, demand_low)/kwh_agg
+high_share <- demand(10, demand_high)/kwh_agg
+
+
+
+```
+
+The following are the high-income welfare, low-income welfare, and producer surplus at five SCC levels:
+
+```{r}
+# $51 
 low_redist_51 <- low_share*tax_revenue
-#Get $2224 back
 low_welfare_51 <- low_redist_51 + welfare_low_tax
 #New welfare is equal to initial welfare --- (-$2422)
 high_redist_51 <- high_share*tax_revenue
@@ -351,27 +306,201 @@ high_redist_51 <- high_share*tax_revenue
 high_welfare_51 <- high_redist_51 + welfare_high_tax
 ```
 
-At $51 SCC with redistribution based on pre-tax consumption share: 
-
-**A:** High-income welfare *increases* by $`r round(high_redist_51, 0)`.
-
-**B:** Low-income welfare *increases* by $`r round(low_redist_51, 0)`. *Note: low-income welfare is still negative.*
-
-**C:** Producer welfare is unchanged ($`r round(ps_tax, 0)`).
-
 ```{r}
-###### Welfare @ $75
+#$75
+demand_scc <- function(p, model, scc){
+  q <- (p - (model$coefficients[[1]] - scc_vec[scc]))/model$coefficients[[2]]
+  q <- ifelse(q<0,0,q)
+  return(q)
+} 
+demand_agg_75 <- function(p){
+  q <- demand_scc(p, demand_low, 1) + demand_scc(p, demand_high, 1)
+  return(q)
+}
+p_75 <- uniroot(function(p)
+  demand_agg_75(p) - supply(p),
+  interval = c(0,20))
+#Gives new P of 9.002
+demand_75 <- demand_agg_75(p_75$root)
+revenue_damage_75 <- demand_75*.0289
+#Low Income @ $75
+demand_low_75 <- demand_scc(p_75$root, demand_low, 1)
+cs_low_75 <- (0.5*demand_low_75*(demand_low$coefficients[1]-tax_75-p_75$root))/100
+# Welfare is CS - tax + money back 
+welfare_low_75 <- cs_low_75 - (demand_low_75 * .0289) - revenue_damage_75 + low_share*revenue_damage_75
+              
+# High Income @$75
+demand_high_75 <- demand_scc(p_75$root, demand_high, 1)
+cs_high_75 <- (0.5*demand_high_75*(demand_high$coefficients[1]-tax_75-p_75$root))/100
+welfare_high_75 <- cs_high_75 - (demand_high_75*0.0289) + high_share*revenue_damage_75
+# Producer @ $75
+ps_75 <- 0.5*demand_75*(p_75$root/100)
 ```
 
-
 ```{r}
-###### Welfare @ $100
+#$100
+demand_agg_100 <- function(p){
+  q <- demand_scc(p, demand_low, 2) + demand_scc(p, demand_high, 2)
+  return(q)
+}
+p_100 <- uniroot(function(p)
+  demand_agg_100(p) - supply(p),
+  interval = c(0,20))
+#Gives new P of 8.667
+demand_100 <- demand_agg_100(p_100$root)
+revenue_damage_100 <- demand_100*.0386
+#Low Income @ $100
+demand_low_100 <- demand_scc(p_100$root, demand_low, 2)
+cs_low_100 <- (0.5*demand_low_100*(demand_low$coefficients[1]-tax_100-p_100$root))/100
+welfare_low_100 <- cs_low_100 - (demand_low_100*0.0386) - revenue_damage_100 + low_share*revenue_damage_100
+              
+# High Income @$100
+demand_high_100 <- demand_scc(p_100$root, demand_high, 2)
+cs_high_100 <- (0.5*demand_high_100*(demand_high$coefficients[1]-tax_100-p_100$root))/100
+welfare_high_100 <- cs_high_100 - (demand_high_100*0.0386) + high_share*revenue_damage_100
+# Producer @ $100
+ps_100 <- 0.5*demand_100*(p_100$root/100)
 ```
 
-
 ```{r}
-###### Welfare @ $125
+#$125
+demand_agg_125 <- function(p){
+  q <- demand_scc(p, demand_low, 3) + demand_scc(p, demand_high, 3)
+  return(q)
+}
+p_125 <- uniroot(function(p)
+  demand_agg_125(p) - supply(p),
+  interval = c(0,20))
+#Gives new P of 8.336
+demand_125 <- demand_agg_125(p_125$root)
+revenue_damage_125 <- demand_125*.0482
+#Low Income @ $125
+demand_low_125 <- demand_scc(p_125$root, demand_low, 3)
+cs_low_125 <- (0.5*demand_low_125*(demand_low$coefficients[1]-tax_125-p_125$root))/100
+welfare_low_125 <- cs_low_125 - (demand_low_125*0.0482) - revenue_damage_125 + low_share*revenue_damage_125
+              
+# High Income @$125
+demand_high_125 <- demand_scc(p_125$root, demand_high, 3)
+cs_high_125 <- (0.5*demand_high_125*(demand_high$coefficients[1]-tax_125-p_125$root))/100
+welfare_high_125 <- cs_high_125 - (demand_high_125*0.0482) + high_share*revenue_damage_125
+# Producer @ $125
+ps_125 <- 0.5*demand_125*(p_125$root/100)
 ```
 
+```{r}
+#$150
+demand_agg_150 <- function(p){
+  q <- demand_scc(p, demand_low, 4) + demand_scc(p, demand_high, 4)
+  return(q)
+}
+p_150 <- uniroot(function(p)
+  demand_agg_150(p) - supply(p),
+  interval = c(0,20))
+# New P of $8.0045, but actual price paid is P + tax 
+demand_150 <- demand_agg_150(p_150$root)
+revenue_damage_150 <- demand_150*.0578
+# Low income @$150
+demand_low_150 <- demand_scc(p_150$root, demand_low, 4)
+cs_low_150 <- (0.5*demand_low_150*(demand_low$coefficients[1]-tax_150-p_150$root))/100
+welfare_low_150 <- cs_low_150 - (demand_low_150*0.0578) - revenue_damage_150 + low_share*revenue_damage_150
+              
+# High Income @$150
+demand_high_150 <- demand_scc(p_150$root, demand_high, 4)
+cs_high_150 <- (0.5*demand_high_150*(demand_high$coefficients[1]-tax_150-p_150$root))/100
+welfare_high_150 <- cs_high_150 - (demand_high_150*0.0578) + high_share*revenue_damage_150
+# Producer @ $100
+ps_150 <- 0.5*demand_150*(p_150$root/100)
+```
 
-### **6. Solar PV**
+A: High-income welfare
+
+- 51 USD/ton: \
+$`r round(high_welfare_51, 0)`. \
+- 75 USD/ton: \
+$`r round(welfare_high_75, 0)`. \
+- 100 USD/ton: \
+$`r round(welfare_high_100, 0)`.\
+- 125 USD/ton: \
+$`r round(welfare_high_125, 0)`.\
+- 150 USD/ton: \
+$`r round(welfare_high_150, 0)`.\
+
+High income welfare decreases with increasing SCC levels assuming taxes are deducted from consumer surplus and the redistribution is added based on their pre-tax share of electricity consumption (`r round(high_share, 2)*100`%).
+
+B: Low-income welfare 
+
+- SCC of 51 USD/ton: 
+$`r round(low_welfare_51, 0)` \
+- SCC of 75 USD/ton: \
+$`r round(welfare_low_75, 0)` \
+- SCC of 100 USD/ton: \
+$`r round(welfare_low_100, 0)`\
+- SCC of 125 USD/ton: \
+$`r round(welfare_low_125, 0)`\
+- SCC of 150 USD/ton: \
+$`r round(welfare_low_150, 0)`\
+
+Low income welfare decreases with increasing SCC levels assuming taxes are deducted from consumer surplus, the entire environmental cost is deducted, and the redistribution is added based on their pre-tax share of electricity consumption (`r round(low_share, 2)*100`%).
+
+C: Producer Welfare
+
+- SCC of 51 USD/ton: \
+$`r round(ps_tax, 0)`\ 
+- SCC of 75 USD/ton: \
+$`r round(ps_75, 0)` \
+- SCC of 100 USD/ton: \
+$`r round(ps_100, 0)`\
+- SCC of 125 USD/ton: \
+$`r round(ps_125, 0)`\
+- SCC of 150 USD/ton: \
+$`r round(ps_150, 0)`\
+
+Producer surplus decreases as SCC increases due to declining quantities consumed.
+
+
+### 6
+Suppose the “high” income group has access to expensive home solar generation. This lowers
+the electricity demand curve for the “high” income group by half (vertically). Under this new
+demand:
+(a) What is total electricity consumption?
+(b) What is the total environmental externality?
+(c) What value of the electricity tax makes the total environmental damage the same as the
+damage when solar panels are available to the high income group?
+ 
+
+```{r}
+# New high-income demand 
+demand_high_solar <- function(p){
+  q <- (p - (demand_high$coefficients[[1]]-1.97)/2)/demand_high$coefficients[[2]]
+  q <- ifelse(q<0,0,q)
+  return(q)
+}
+#Low income demand, again 
+demand_low_solar <- function(p){
+  q <- (p - (demand_low$coefficients[[1]]-1.97))/demand_low$coefficients[[2]]
+  q <- ifelse(q<0,0,q)
+  return(q)
+}
+demand_agg_solar <- function(p){
+  q <- demand_high_solar(p) + demand_low_solar(p)
+  return(q)
+}
+p_solar <- uniroot(function(p)
+  demand_agg_solar(p) - supply(p),
+        interval = c(0,20))
+price_solar <- p_solar$root
+# New price is 5.845
+demand_solar <- demand_agg_solar(price_solar)
+#313691 is new demand 
+env_cost_solar <- demand_solar*0.0197
+# Need SCC equation when it is equal to solar equation in terms of damage 
+tax_final <- (.0197/(env_cost_solar/env_cost_tax))
+```
+
+A: Total electricity consumption with solar is `r round(demand_solar, 0)` kWh. 
+
+B: Total environmental cost is $`r round(env_cost_solar, 0)`.
+
+C: The tax to make the environmental damage associated with the 51 USD SCC and no solar equal to the environmental damage with solar would be $`r round(tax_final, 4)`.
+
+Note: this is roughly double the tax initially set based on the MEC at an SCC of $51
